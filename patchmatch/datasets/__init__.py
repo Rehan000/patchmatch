@@ -1,3 +1,3 @@
-from .data_loader import PatchPairDatasetLoader
+from .data_loader import PatchPairDataset
 
-__all__ = ['PatchPairDatasetLoader']
+__all__ = ['PatchPairDataset']

@@ -1,63 +1,65 @@
 import numpy as np
-import tensorflow as tf
+import torch
+from torch.utils.data import Dataset, DataLoader
 
-class PatchPairDatasetLoader:
+class PatchPairDataset(Dataset):
     """
-    Loads patch pair datasets stored in .npz format and prepares them for training
-    with Siamese networks using TensorFlow.
+    Loads patch pair datasets from .npz files and provides samples for training
+    Siamese networks in PyTorch.
+
+    Each sample is a tuple: ((patch1, patch2), label)
     """
 
-    def __init__(self, npz_path, batch_size=64, shuffle=True):
+    def __init__(self, npz_path, transform=None):
         """
-        Initializes the dataset loader.
+        Initializes the dataset.
 
         Args:
             npz_path (str): Path to the .npz file containing 'patches' and 'labels'.
-            batch_size (int): Batch size for training.
-            shuffle (bool): Whether to shuffle the dataset.
+            transform (callable, optional): Optional transform to be applied on a sample.
         """
         self.npz_path = npz_path
-        self.batch_size = batch_size
-        self.shuffle = shuffle
-        self.dataset = None
+        self.transform = transform
+        self._load_data()
 
     def _load_data(self):
         """
-        Loads the data from the .npz file and prepares patch1, patch2, and labels.
-
-        Returns:
-            tuple: (patch1, patch2, labels)
+        Loads the patches and labels from the .npz file and preprocesses them.
         """
-        data = np.load(self.npz_path)
+        data = np.load(self.npz_path, mmap_mode='r')
         patches = data['patches']  # shape: (N, H, W, 2)
         labels = data['labels']    # shape: (N,)
 
         patches = patches.astype(np.float32) / 255.0
-        patch1 = patches[..., 0][..., np.newaxis]  # shape: (N, H, W, 1)
-        patch2 = patches[..., 1][..., np.newaxis]  # shape: (N, H, W, 1)
+        patch1 = patches[..., 0]  # (N, H, W)
+        patch2 = patches[..., 1]  # (N, H, W)
+
+        self.patch1 = torch.from_numpy(patch1).unsqueeze(1)  # (N, 1, H, W)
+        self.patch2 = torch.from_numpy(patch2).unsqueeze(1)  # (N, 1, H, W)
 
         labels = labels.astype(np.float32)
-        labels[labels == -1] = 0  # Treat hard negatives as negatives for contrastive loss
+        labels[labels == -1] = 0  # Convert hard negatives to negatives
+        self.labels = torch.from_numpy(labels)               # (N,)
 
-        return patch1, patch2, labels
-
-    def get_dataset(self):
+    def __len__(self):
         """
-        Returns the TensorFlow Dataset object.
+        Returns the total number of patch pairs.
+        """
+        return len(self.labels)
+
+    def __getitem__(self, idx):
+        """
+        Returns the idx-th patch pair and label.
 
         Returns:
-            tf.data.Dataset: A dataset yielding ((patch1, patch2), label) tuples.
+            tuple: ((patch1, patch2), label)
         """
-        if self.dataset is not None:
-            return self.dataset
+        p1 = self.patch1[idx]
+        p2 = self.patch2[idx]
+        label = self.labels[idx]
 
-        patch1, patch2, labels = self._load_data()
-        dataset = tf.data.Dataset.from_tensor_slices(((patch1, patch2), labels))
+        if self.transform:
+            p1 = self.transform(p1)
+            p2 = self.transform(p2)
 
-        if self.shuffle:
-            dataset = dataset.shuffle(buffer_size=len(labels))
-
-        dataset = dataset.batch(self.batch_size)
-        dataset = dataset.prefetch(tf.data.AUTOTUNE)
-        self.dataset = dataset
-        return dataset
+        return (p1, p2), label

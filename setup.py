@@ -8,7 +8,7 @@ setup(
         'opencv-python==4.11.0.86',
         'numpy==2.1.3',
         'tqdm==4.67.1',
-        'tensorflow==2.19.0',
+        'torch==2.7.1',
         'pyyaml==6.0.2',
     ],
     author='Muhammad Rehan',

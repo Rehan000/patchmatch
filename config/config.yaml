@@ -1,10 +1,26 @@
 dataset_root: data/hpatches-sequences-release
-output_dir: data/dataset
+dataset_output_dir: data/dataset
 
 splits:
-  train: 40000
-  valid: 5000
-  test: 5000
+  train: 300000
+  valid: 10000
+  test: 10000
 
 patch_size: 40
 grid_spacing: 20
+
+model:
+  input_shape: [40, 40, 1]
+  embedding_dim: 64
+  margin: 1.0
+
+training:
+  epochs: 10
+  batch_size: 16
+  learning_rate: 0.001
+
+dataset:
+  train: data/dataset/train_dataset.npz
+  valid: data/dataset/valid_dataset.npz
+
+model_output_dir: model_outputs/

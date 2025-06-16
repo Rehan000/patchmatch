@@ -10,7 +10,7 @@ def main():
     config = load_config('config/config.yaml')
 
     base_path = os.path.abspath(config['dataset_root'])
-    output_path = os.path.abspath(config['output_dir'])
+    output_path = os.path.abspath(config['dataset_output_dir'])
 
     if not os.path.exists(base_path):
         raise FileNotFoundError(f"[ERROR] Dataset folder not found at: {base_path}")

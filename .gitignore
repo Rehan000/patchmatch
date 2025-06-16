@@ -1,5 +1,6 @@
 .idea
 /data/*
 patchmatch.egg-info
+model_outputs/
 *.pyc
 !/data/.gitinclude

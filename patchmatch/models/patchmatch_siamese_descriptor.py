@@ -1,101 +1,129 @@
-import tensorflow as tf
-from tensorflow.keras import layers, models
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
 
-class PatchMatchSiameseDescriptor:
+
+class PatchMatchEncoder(nn.Module):
     """
-    Class to build and manage a lightweight Siamese descriptor model with contrastive loss.
+    Lightweight encoder that transforms grayscale image patches into embedding vectors
+    using depthwise separable convolutions, batch normalization, and global average pooling.
+
+    Designed to be used as the shared encoder in a Siamese network.
     """
 
-    def __init__(self, input_shape=(40, 40, 1), embedding_dim=64, margin=1.0):
+    def __init__(self, input_channels=1, embedding_dim=64):
         """
-        Initializes the model components.
+        Initializes the encoder module.
 
         Args:
-            input_shape (tuple): Shape of input patch (default is 40x40 grayscale).
-            embedding_dim (int): Length of the learned descriptor vector.
-            margin (float): Margin for contrastive loss.
+            input_channels (int): Number of input channels (default 1 for grayscale).
+            embedding_dim (int): Size of the output embedding vector.
         """
-        self.input_shape = input_shape
-        self.embedding_dim = embedding_dim
+        super(PatchMatchEncoder, self).__init__()
+
+        self.encoder = nn.Sequential(
+            nn.Conv2d(input_channels, 32, kernel_size=3, padding=1),  # (B, 32, 40, 40)
+            nn.ReLU(),
+            nn.BatchNorm2d(32),
+
+            nn.Conv2d(32, 32, kernel_size=3, padding=1, groups=32),  # Depthwise
+            nn.ReLU(),
+            nn.Conv2d(32, 64, kernel_size=1),  # Pointwise
+            nn.ReLU(),
+            nn.BatchNorm2d(64),
+            nn.MaxPool2d(kernel_size=2),  # (B, 64, 20, 20)
+
+            nn.Conv2d(64, 64, kernel_size=3, padding=1, groups=64),  # Depthwise
+            nn.ReLU(),
+            nn.Conv2d(64, 64, kernel_size=1),  # Pointwise
+            nn.ReLU(),
+            nn.BatchNorm2d(64),
+
+            nn.AdaptiveAvgPool2d(1),  # (B, 64, 1, 1)
+        )
+
+        self.projection = nn.Linear(64, embedding_dim)
+
+    def forward(self, x):
+        """
+        Forward pass through the encoder.
+
+        Args:
+            x (Tensor): Input tensor of shape (B, 1, 40, 40).
+
+        Returns:
+            Tensor: L2-normalized embedding of shape (B, embedding_dim).
+        """
+        x = self.encoder(x)  # (B, 64, 1, 1)
+        x = x.view(x.size(0), -1)  # (B, 64)
+        x = self.projection(x)  # (B, embedding_dim)
+        x = F.normalize(x, p=2, dim=1)
+        return x
+
+
+class PatchMatchSiameseDescriptor(nn.Module):
+    """
+    Siamese network built on a shared PatchMatchEncoder for comparing image patches.
+    The network computes the L2 distance between descriptors of two input patches.
+    """
+
+    def __init__(self, input_channels=1, embedding_dim=64):
+        """
+        Initializes the Siamese network.
+
+        Args:
+            input_channels (int): Number of input channels (default 1 for grayscale).
+            embedding_dim (int): Size of the output descriptor vector.
+        """
+        super(PatchMatchSiameseDescriptor, self).__init__()
+        self.encoder = PatchMatchEncoder(input_channels, embedding_dim)
+
+    def forward(self, x1, x2):
+        """
+        Forward pass to compute the Euclidean distance between embeddings.
+
+        Args:
+            x1 (Tensor): First patch batch, shape (B, 1, 40, 40).
+            x2 (Tensor): Second patch batch, shape (B, 1, 40, 40).
+
+        Returns:
+            Tensor: Euclidean distance between embeddings, shape (B, 1).
+        """
+        feat1 = self.encoder(x1)
+        feat2 = self.encoder(x2)
+        distance = torch.norm(feat1 - feat2, dim=1, keepdim=True)
+        return distance
+
+
+class ContrastiveLoss(nn.Module):
+    """
+    Contrastive loss for training Siamese networks.
+
+    Encourages the network to produce embeddings with small distances for
+    similar pairs and larger distances (greater than a margin) for dissimilar pairs.
+    """
+
+    def __init__(self, margin=1.0):
+        """
+        Initializes the contrastive loss module.
+
+        Args:
+            margin (float): Distance margin for dissimilar pairs.
+        """
+        super(ContrastiveLoss, self).__init__()
         self.margin = margin
 
-        self.encoder = self._build_encoder()
-        self.siamese_model = self._build_siamese_model()
-
-    def _build_encoder(self):
+    def forward(self, distances, labels):
         """
-        Builds the encoder model using depthwise separable convolutions.
+        Computes the contrastive loss.
+
+        Args:
+            distances (Tensor): Euclidean distances between patch embeddings, shape (B, 1).
+            labels (Tensor): Ground truth labels (1 for similar, 0 for dissimilar), shape (B,).
 
         Returns:
-            tf.keras.Model: Encoder model.
+            Tensor: Scalar loss value.
         """
-        inputs = layers.Input(shape=self.input_shape)
-
-        x = layers.Conv2D(32, 3, padding='same', activation='relu')(inputs)
-        x = layers.BatchNormalization()(x)
-        x = layers.DepthwiseConv2D(3, padding='same', activation='relu')(x)
-        x = layers.Conv2D(64, 1, padding='same', activation='relu')(x)
-        x = layers.BatchNormalization()(x)
-        x = layers.MaxPooling2D()(x)  # Output: 20x20
-
-        x = layers.DepthwiseConv2D(3, padding='same', activation='relu')(x)
-        x = layers.Conv2D(64, 1, padding='same', activation='relu')(x)
-        x = layers.BatchNormalization()(x)
-        x = layers.GlobalAveragePooling2D()(x)
-
-        x = layers.Dense(self.embedding_dim)(x)
-        x = layers.Lambda(lambda t: tf.math.l2_normalize(t, axis=1))(x)
-
-        return models.Model(inputs, x, name="LightweightDescriptor")
-
-    def _build_siamese_model(self):
-        """
-        Builds the full Siamese model using the shared encoder.
-
-        Returns:
-            tf.keras.Model: Siamese model.
-        """
-        input_a = layers.Input(shape=self.input_shape)
-        input_b = layers.Input(shape=self.input_shape)
-
-        encoded_a = self.encoder(input_a)
-        encoded_b = self.encoder(input_b)
-
-        distance = layers.Lambda(
-            lambda tensors: tf.norm(tensors[0] - tensors[1], axis=1, keepdims=True)
-        )([encoded_a, encoded_b])
-
-        return models.Model(inputs=[input_a, input_b], outputs=distance, name="SiameseNetwork")
-
-    def get_model(self):
-        """
-        Returns the Siamese model.
-
-        Returns:
-            tf.keras.Model
-        """
-        return self.siamese_model
-
-    def get_encoder(self):
-        """
-        Returns the encoder model (can be used standalone for descriptors).
-
-        Returns:
-            tf.keras.Model
-        """
-        return self.encoder
-
-    def get_contrastive_loss(self):
-        """
-        Returns the contrastive loss function.
-
-        Returns:
-            Callable: A Keras-compatible loss function.
-        """
-        def loss(y_true, y_pred):
-            y_true = tf.cast(y_true, tf.float32)
-            return tf.reduce_mean(
-                y_true * tf.square(y_pred) +
-                (1 - y_true) * tf.square(tf.maximum(self.margin - y_pred, 0))
-            )
-        return loss
+        labels = labels.float()
+        loss = labels * distances.pow(2) + (1 - labels) * F.relu(self.margin - distances).pow(2)
+        return loss.mean()
