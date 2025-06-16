@@ -1,4 +1,5 @@
 .idea
 /data/*
+patchmatch.egg-info
 *.pyc
 !/data/.gitinclude
