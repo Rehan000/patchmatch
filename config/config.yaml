@@ -12,11 +12,12 @@ grid_spacing: 20
 model:
   input_shape: [40, 40, 1]
   embedding_dim: 64
-  margin: 1.0
+  margin: 0.5
+  decision_threshold: 0.4
 
 training:
   epochs: 10
-  batch_size: 16
+  batch_size: 32
   learning_rate: 0.001
 
 dataset:

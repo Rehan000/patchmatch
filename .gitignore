@@ -2,5 +2,6 @@
 /data/*
 patchmatch.egg-info
 model_outputs/
+notebooks/.ipynb_checkpoints
 *.pyc
 !/data/.gitinclude
