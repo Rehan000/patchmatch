@@ -8,7 +8,7 @@ class PatchMatchEncoder(nn.Module):
     Lightweight encoder that transforms grayscale image patches into embedding vectors
     using depthwise separable convolutions, batch normalization, and global average pooling.
 
-    Designed to be used as the shared encoder in a Siamese network.
+    Designed to be used as the shared encoder in a Triplet network.
     """
 
     def __init__(self, input_channels=1, embedding_dim=64):
@@ -54,76 +54,76 @@ class PatchMatchEncoder(nn.Module):
         Returns:
             Tensor: L2-normalized embedding of shape (B, embedding_dim).
         """
-        x = self.encoder(x)  # (B, 64, 1, 1)
-        x = x.view(x.size(0), -1)  # (B, 64)
-        x = self.projection(x)  # (B, embedding_dim)
-        x = F.normalize(x, p=2, dim=1)
-        return x
+        x = self.encoder(x)
+        x = x.view(x.size(0), -1)
+        x = self.projection(x)
+        return F.normalize(x, p=2, dim=1)
 
 
-class PatchMatchSiameseDescriptor(nn.Module):
+class PatchMatchTripletNetwork(nn.Module):
     """
-    Siamese network built on a shared PatchMatchEncoder for comparing image patches.
-    The network computes the L2 distance between descriptors of two input patches.
+    Triplet network built on a shared PatchMatchEncoder for learning embeddings
+    that cluster similar patches and push apart dissimilar ones using Triplet Loss.
     """
 
     def __init__(self, input_channels=1, embedding_dim=64):
         """
-        Initializes the Siamese network.
+        Initializes the triplet network.
 
         Args:
-            input_channels (int): Number of input channels (default 1 for grayscale).
+            input_channels (int): Number of input channels.
             embedding_dim (int): Size of the output descriptor vector.
         """
-        super(PatchMatchSiameseDescriptor, self).__init__()
+        super(PatchMatchTripletNetwork, self).__init__()
         self.encoder = PatchMatchEncoder(input_channels, embedding_dim)
 
-    def forward(self, x1, x2):
+    def forward(self, anchor, positive, negative):
         """
-        Forward pass to compute the Euclidean distance between embeddings.
+        Computes embeddings for anchor, positive, and negative patches.
 
         Args:
-            x1 (Tensor): First patch batch, shape (B, 1, 40, 40).
-            x2 (Tensor): Second patch batch, shape (B, 1, 40, 40).
+            anchor (Tensor): Anchor patch, shape (B, 1, 40, 40)
+            positive (Tensor): Positive patch, shape (B, 1, 40, 40)
+            negative (Tensor): Negative patch, shape (B, 1, 40, 40)
 
         Returns:
-            Tensor: Euclidean distance between embeddings, shape (B, 1).
+            Tuple[Tensor, Tensor, Tensor]: Normalized embeddings for anchor, positive, and negative.
         """
-        feat1 = self.encoder(x1)
-        feat2 = self.encoder(x2)
-        distance = torch.norm(feat1 - feat2, dim=1, keepdim=True)
-        return distance
+        anchor_embed = self.encoder(anchor)
+        positive_embed = self.encoder(positive)
+        negative_embed = self.encoder(negative)
+        return anchor_embed, positive_embed, negative_embed
 
 
-class ContrastiveLoss(nn.Module):
+class TripletLoss(nn.Module):
     """
-    Contrastive loss for training Siamese networks.
+    Triplet margin loss for embedding learning.
 
-    Encourages the network to produce embeddings with small distances for
-    similar pairs and larger distances (greater than a margin) for dissimilar pairs.
+    Encourages anchor-positive distances to be smaller than anchor-negative distances
+    by a specified margin.
     """
 
     def __init__(self, margin=1.0):
         """
-        Initializes the contrastive loss module.
+        Initializes the triplet loss module.
 
         Args:
-            margin (float): Distance margin for dissimilar pairs.
+            margin (float): Margin by which negatives should be farther than positives.
         """
-        super(ContrastiveLoss, self).__init__()
+        super(TripletLoss, self).__init__()
         self.margin = margin
+        self.loss_fn = nn.TripletMarginLoss(margin=margin, p=2)
 
-    def forward(self, distances, labels):
+    def forward(self, anchor_embed, positive_embed, negative_embed):
         """
-        Computes the contrastive loss.
+        Computes the triplet loss.
 
         Args:
-            distances (Tensor): Euclidean distances between patch embeddings, shape (B, 1).
-            labels (Tensor): Ground truth labels (1 for similar, 0 for dissimilar), shape (B,).
+            anchor_embed (Tensor): Anchor embeddings, shape (B, D)
+            positive_embed (Tensor): Positive embeddings, shape (B, D)
+            negative_embed (Tensor): Negative embeddings, shape (B, D)
 
         Returns:
             Tensor: Scalar loss value.
         """
-        labels = labels.float()
-        loss = labels * distances.pow(2) + (1 - labels) * F.relu(self.margin - distances).pow(2)
-        return loss.mean()
+        return self.loss_fn(anchor_embed, positive_embed, negative_embed)

@@ -1,3 +1,3 @@
-from .patchmatch_siamese_descriptor import PatchMatchSiameseDescriptor, ContrastiveLoss
+from .patchmatch_triplet_descriptor import PatchMatchEncoder, PatchMatchTripletNetwork, TripletLoss
 
-__all__ = ['PatchMatchSiameseDescriptor', 'ContrastiveLoss']
+__all__ = ['PatchMatchEncoder', 'PatchMatchTripletNetwork', 'TripletLoss']

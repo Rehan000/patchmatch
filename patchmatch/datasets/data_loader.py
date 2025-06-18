@@ -2,12 +2,12 @@ import numpy as np
 import torch
 from torch.utils.data import Dataset, DataLoader
 
-class PatchPairDataset(Dataset):
+class PatchTripletDataset(Dataset):
     """
-    Loads patch pair datasets from .npz files and provides samples for training
-    Siamese networks in PyTorch.
+    Loads triplet patch datasets from .npz files and provides samples for training
+    using Triplet Loss in PyTorch.
 
-    Each sample is a tuple: ((patch1, patch2), label)
+    Each sample is a tuple: (anchor, positive, negative)
     """
 
     def __init__(self, npz_path, transform=None):
@@ -15,8 +15,8 @@ class PatchPairDataset(Dataset):
         Initializes the dataset.
 
         Args:
-            npz_path (str): Path to the .npz file containing 'patches' and 'labels'.
-            transform (callable, optional): Optional transform to be applied on a sample.
+            npz_path (str): Path to the .npz file containing 'triplets'.
+            transform (callable, optional): Optional transform to be applied to each patch.
         """
         self.npz_path = npz_path
         self.transform = transform
@@ -24,42 +24,40 @@ class PatchPairDataset(Dataset):
 
     def _load_data(self):
         """
-        Loads the patches and labels from the .npz file and preprocesses them.
+        Loads and preprocesses triplet patches from the .npz file.
         """
         data = np.load(self.npz_path, mmap_mode='r')
-        patches = data['patches']  # shape: (N, H, W, 2)
-        labels = data['labels']    # shape: (N,)
+        triplets = data['triplets']  # shape: (N, H, W, 3)
 
-        patches = patches.astype(np.float32) / 255.0
-        patch1 = patches[..., 0]  # (N, H, W)
-        patch2 = patches[..., 1]  # (N, H, W)
+        triplets = triplets.astype(np.float32) / 255.0
+        anchors     = triplets[..., 0]  # (N, H, W)
+        positives   = triplets[..., 1]  # (N, H, W)
+        negatives   = triplets[..., 2]  # (N, H, W)
 
-        self.patch1 = torch.from_numpy(patch1).unsqueeze(1)  # (N, 1, H, W)
-        self.patch2 = torch.from_numpy(patch2).unsqueeze(1)  # (N, 1, H, W)
-
-        labels = labels.astype(np.float32)
-        labels[labels == -1] = 0  # Convert hard negatives to negatives
-        self.labels = torch.from_numpy(labels)               # (N,)
+        self.anchors   = torch.from_numpy(anchors).unsqueeze(1)   # (N, 1, H, W)
+        self.positives = torch.from_numpy(positives).unsqueeze(1) # (N, 1, H, W)
+        self.negatives = torch.from_numpy(negatives).unsqueeze(1) # (N, 1, H, W)
 
     def __len__(self):
         """
-        Returns the total number of patch pairs.
+        Returns the total number of triplets.
         """
-        return len(self.labels)
+        return self.anchors.shape[0]
 
     def __getitem__(self, idx):
         """
-        Returns the idx-th patch pair and label.
+        Returns the idx-th triplet as (anchor, positive, negative).
 
         Returns:
-            tuple: ((patch1, patch2), label)
+            tuple: (anchor_tensor, positive_tensor, negative_tensor)
         """
-        p1 = self.patch1[idx]
-        p2 = self.patch2[idx]
-        label = self.labels[idx]
+        a = self.anchors[idx]
+        p = self.positives[idx]
+        n = self.negatives[idx]
 
         if self.transform:
-            p1 = self.transform(p1)
-            p2 = self.transform(p2)
+            a = self.transform(a)
+            p = self.transform(p)
+            n = self.transform(n)
 
-        return (p1, p2), label
+        return a, p, n
