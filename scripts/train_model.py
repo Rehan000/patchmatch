@@ -7,7 +7,7 @@ from datetime import datetime
 from tqdm import tqdm
 import matplotlib.pyplot as plt
 
-from patchmatch.datasets import PatchTripletDataset
+from patchmatch.datasets.data_loader import PatchTripletDataset, create_dataloader
 from patchmatch.models import PatchMatchTripletNetwork, TripletLoss
 
 def load_config(path="config/config.yaml"):
@@ -87,9 +87,12 @@ def main():
     device_name = torch.cuda.get_device_name(0) if torch.cuda.is_available() else "CPU"
     print(f"[INFO] Using device: {device} ({device_name})")
 
-    train_loader = prepare_dataloader(config["dataset"]["train"], config["training"]["batch_size"], shuffle=True)
-    val_loader = prepare_dataloader(config["dataset"]["valid"], config["training"]["batch_size"], shuffle=False)
+    print("[INFO] Preparing train dataloader...")
+    train_loader = create_dataloader(config["dataset"]["train"], config["training"]["batch_size"], shuffle=True)
+    print("[INFO] Preparing validation dataloader...")
+    val_loader = create_dataloader(config["dataset"]["valid"], config["training"]["batch_size"], shuffle=False)
 
+    print("[INFO] Initializing model...")
     model = PatchMatchTripletNetwork(embedding_dim=config["model"]["embedding_dim"]).to(device)
     loss_fn = TripletLoss(margin=config["model"].get("margin", 1.0))
     optimizer = optim.Adam(model.parameters(), lr=config["training"]["learning_rate"])

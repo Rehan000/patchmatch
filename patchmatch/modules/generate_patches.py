@@ -7,21 +7,24 @@ from skimage.metrics import structural_similarity as ssim
 
 class GeneratePatches:
     """
-    Generates triplet image patches (anchor, positive, negative) from HPatches dataset sequences.
+    Generate triplet patches (anchor, positive, negative) from the HPatches dataset.
 
-    The patches are sampled from a grid on a reference image, warped using homographies to obtain
-    positives, and shifted to generate negatives (both random and hard negatives). SSIM filtering
-    is optionally applied to retain only high-similarity distractors as hard negatives.
+    Each patch triplet consists of:
+    - Anchor: a patch from the reference image.
+    - Positive: a corresponding patch from a warped image using homography.
+    - Negative: a spatially displaced patch from the same image as the positive (either random or hard).
+
+    Supports SSIM filtering to select hard negatives with similar appearance to the anchor.
 
     Attributes:
-        folder_path (str): Path to HPatches dataset root.
-        save_path (str): Destination path to save generated triplets as a .npz file.
-        allowed_sequences (list): Subset of sequence names to process.
+        folder_path (str): Root directory of the HPatches dataset.
+        save_path (str): Path to save the generated dataset as a .npz file.
+        allowed_sequences (list[str]): Specific sequences to include, or None to include all.
         dataset_size (int): Number of triplet samples to generate.
-        patch_size (int): Size (in pixels) of each square patch.
-        grid_spacing (int): Step size for grid sampling on the reference image.
-        use_ssim_filter (bool): Whether to use SSIM filtering for hard negatives.
-        ssim_threshold (float): Threshold to accept hard negatives based on SSIM score.
+        patch_size (int): Size of each square patch in pixels.
+        grid_spacing (int): Step size between sampled grid points on the reference image.
+        use_ssim_filter (bool): Whether to apply SSIM-based filtering to hard negatives.
+        ssim_threshold (float): Minimum SSIM score to accept a hard negative.
     """
 
     def __init__(self, folder_path, save_path, allowed_sequences=None,
@@ -42,15 +45,15 @@ class GeneratePatches:
 
     def extract(self):
         """
-        Main function to generate triplet patches from HPatches sequences.
-        Iterates over grid locations in reference images, generates anchors and positives
-        using homographies, and samples random and hard negatives. Optionally filters
-        hard negatives using SSIM similarity.
+        Generate triplets using grid-based sampling and save them as a .npz file.
+
+        Performs oversampling per sequence (120%) to account for SSIM rejections,
+        then randomly subsamples down to the desired dataset size.
         """
         all_dirs = sorted([d for d in os.listdir(self.folder_path) if os.path.isdir(os.path.join(self.folder_path, d))])
         sequences = self.allowed_sequences if self.allowed_sequences else all_dirs
         total_sequences = len(sequences)
-        samples_per_sequence = self.dataset_size // total_sequences
+        samples_per_sequence = int((self.dataset_size * 1.2) // total_sequences)
 
         print(f"[INFO] Using {total_sequences} sequences")
 
@@ -84,38 +87,52 @@ class GeneratePatches:
                         if anchor is None or positive is None:
                             continue
 
-                        neg = self._get_offset_patch(img2, pt2, offset_range=(20, 40))
-                        if neg is not None:
-                            self.triplets.append(np.stack([anchor, positive, neg], axis=-1))
-                            self.random_negative_count += 1
+                        neg_type = random.choice(['random', 'hard'])
 
-                        hard_neg = self._get_offset_patch(img2, pt2, offset_range=(10, 15))
-                        if hard_neg is not None:
-                            if self.use_ssim_filter:
-                                score = self._ssim(anchor, hard_neg)
-                                if score < self.ssim_threshold:
-                                    continue
-                            self.triplets.append(np.stack([anchor, positive, hard_neg], axis=-1))
-                            self.hard_negative_count += 1
+                        if neg_type == 'random':
+                            neg = self._get_offset_patch(img2, pt2, offset_range=(20, 40))
+                            if neg is not None:
+                                self.triplets.append(np.stack([anchor, positive, neg], axis=-1))
+                                self.random_negative_count += 1
+                                count += 1
 
-                        count += 2
+                        else:
+                            hard_neg = self._get_offset_patch(img2, pt2, offset_range=(10, 15))
+                            if hard_neg is not None:
+                                if self.use_ssim_filter:
+                                    score = self._ssim(anchor, hard_neg)
+                                    if score < self.ssim_threshold:
+                                        continue
+                                self.triplets.append(np.stack([anchor, positive, hard_neg], axis=-1))
+                                self.hard_negative_count += 1
+                                count += 1
+
                         if count >= samples_per_sequence:
                             break
                     if count >= samples_per_sequence:
                         break
 
+        total_collected = len(self.triplets)
+
+        if total_collected >= self.dataset_size:
+            print(f"[INFO] Subsampling {total_collected} triplets to exactly {self.dataset_size}")
+            random.shuffle(self.triplets)
+            self.triplets = self.triplets[:self.dataset_size]
+        else:
+            print(f"[WARNING] Only generated {total_collected} triplets; fewer than requested {self.dataset_size}.")
+            print("[WARNING] You may try reducing SSIM threshold, increasing grid spacing, or adding more sequences.")
+
         self._save_dataset()
 
     def _load_images_and_homographies(self, seq_path):
         """
-        Load grayscale images and corresponding homography matrices for a given sequence.
+        Load all grayscale images and associated homographies from a sequence.
 
         Args:
-            seq_path (str): Path to sequence directory.
+            seq_path (str): Directory path of the sequence.
 
         Returns:
-            images (list): List of grayscale images.
-            homographies (dict): Mapping from index to homography matrices.
+            tuple: List of grayscale images, and dict of homographies from reference image.
         """
         images = []
         homographies = {}
@@ -137,14 +154,14 @@ class GeneratePatches:
 
     def _is_within_bounds(self, pt, shape):
         """
-        Check if a patch centered at a given point lies fully within the image boundaries.
+        Verify if a patch centered at a point lies entirely within an image.
 
         Args:
-            pt (tuple): (x, y) coordinates.
-            shape (tuple): Shape of the image (height, width).
+            pt (tuple): x, y coordinate.
+            shape (tuple): Image shape (height, width).
 
         Returns:
-            bool: True if patch lies within bounds, else False.
+            bool: True if patch is fully inside image bounds.
         """
         x, y = int(pt[0]), int(pt[1])
         return (self.patch_size // 2 <= x < shape[1] - self.patch_size // 2 and
@@ -152,14 +169,14 @@ class GeneratePatches:
 
     def _extract_patch(self, img, pt):
         """
-        Extract a square patch centered at a specific point in the image.
+        Extract a square patch from an image centered at the given point.
 
         Args:
             img (ndarray): Grayscale image.
-            pt (tuple): (x, y) coordinates.
+            pt (tuple): (x, y) center point.
 
         Returns:
-            ndarray or None: Extracted patch or None if coordinates are out of bounds.
+            ndarray or None: Extracted patch or None if out of bounds.
         """
         x, y = int(round(pt[0])), int(round(pt[1]))
         half = self.patch_size // 2
@@ -167,15 +184,15 @@ class GeneratePatches:
 
     def _get_offset_patch(self, img, ref_pt, offset_range):
         """
-        Generate a patch at a random offset from a reference point.
+        Generate a spatially displaced patch from a reference point.
 
         Args:
-            img (ndarray): Target image.
-            ref_pt (ndarray): Reference homogeneous coordinates.
-            offset_range (tuple): Range of random offsets.
+            img (ndarray): Image to extract from.
+            ref_pt (ndarray): Homogeneous reference point.
+            offset_range (tuple): Range of allowed pixel displacements.
 
         Returns:
-            ndarray or None: Offset patch or None if out of bounds.
+            ndarray or None: Patch if valid, else None.
         """
         pt = ref_pt.copy()
         pt[0] += random.choice([-1, 1]) * random.randint(*offset_range)
@@ -186,14 +203,14 @@ class GeneratePatches:
 
     def _ssim(self, patch1, patch2):
         """
-        Compute Structural Similarity Index (SSIM) between two patches.
+        Calculate the Structural Similarity Index (SSIM) between two patches.
 
         Args:
             patch1 (ndarray): First patch.
             patch2 (ndarray): Second patch.
 
         Returns:
-            float: SSIM score between 0 and 1.
+            float: SSIM score (0 to 1).
         """
         try:
             return ssim(patch1, patch2)
@@ -202,7 +219,7 @@ class GeneratePatches:
 
     def _save_dataset(self):
         """
-        Save all generated triplets to a compressed .npz file on disk.
+        Save the generated triplets to a compressed .npz file on disk.
         """
         os.makedirs(os.path.dirname(self.save_path), exist_ok=True)
         np.savez_compressed(self.save_path, triplets=np.array(self.triplets))
