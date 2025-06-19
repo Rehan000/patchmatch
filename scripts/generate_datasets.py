@@ -49,6 +49,8 @@ def main():
     splits_config = config.get('splits', {})
     patch_size = config.get('patch_size', 40)
     grid_spacing = config.get('grid_spacing', 20)
+    use_ssim_filter = config.get('use_ssim_filter', True)
+    ssim_threshold = config.get('ssim_threshold', 0.5)
 
     split_sequences = generate_sequence_splits(base_path)
 
@@ -63,7 +65,9 @@ def main():
             allowed_sequences=split_sequences[split],
             dataset_size=size,
             patch_size=patch_size,
-            grid_spacing=grid_spacing
+            grid_spacing=grid_spacing,
+            use_ssim_filter=use_ssim_filter,
+            ssim_threshold=ssim_threshold
         )
         generator.extract()
 

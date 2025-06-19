@@ -2,20 +2,23 @@ dataset_root: data/hpatches-sequences-release
 dataset_output_dir: data/dataset
 
 splits:
-  train: 300000
-  valid: 10000
-  test: 10000
+  train: 500000
+  valid: 20000
+  test: 20000
 
 patch_size: 40
 grid_spacing: 20
 
+use_ssim_filter: true
+ssim_threshold: 0.5
+
 model:
   input_shape: [40, 40, 1]
   embedding_dim: 64
-  margin: 0.5
+  margin: 0.7
 
 training:
-  epochs: 10
+  epochs: 30
   batch_size: 32
   learning_rate: 0.001
 

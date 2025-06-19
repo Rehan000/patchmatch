@@ -16,6 +16,8 @@ dependencies = [
     "tqdm==4.67.1",
     "torch==2.7.1",
     "pyyaml==6.0.2",
+    "matplotlib~=3.10.3",
+    "scikit_image~=0.25.2",
 ]
 
 [tool.setuptools.packages.find]
