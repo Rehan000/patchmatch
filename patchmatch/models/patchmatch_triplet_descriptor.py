@@ -22,20 +22,20 @@ class PatchMatchEncoder(nn.Module):
         super(PatchMatchEncoder, self).__init__()
 
         self.encoder = nn.Sequential(
-            nn.Conv2d(input_channels, 32, kernel_size=3, padding=1),  # (B, 32, 40, 40)
+            nn.Conv2d(input_channels, 48, kernel_size=3, padding=1),  # (B, 32, 40, 40)
             nn.ReLU(),
-            nn.BatchNorm2d(32),
+            nn.BatchNorm2d(48),
 
-            nn.Conv2d(32, 32, kernel_size=3, padding=1, groups=32),  # Depthwise
+            nn.Conv2d(48, 48, kernel_size=3, padding=1, groups=48),  # Depthwise
             nn.ReLU(),
-            nn.Conv2d(32, 64, kernel_size=1),  # Pointwise
+            nn.Conv2d(48, 96, kernel_size=1),  # Pointwise
             nn.ReLU(),
-            nn.BatchNorm2d(64),
+            nn.BatchNorm2d(96),
             nn.MaxPool2d(kernel_size=2),  # (B, 64, 20, 20)
 
-            nn.Conv2d(64, 64, kernel_size=3, padding=1, groups=64),  # Depthwise
+            nn.Conv2d(96, 96, kernel_size=3, padding=1, groups=96),  # Depthwise
             nn.ReLU(),
-            nn.Conv2d(64, 64, kernel_size=1),  # Pointwise
+            nn.Conv2d(96, 64, kernel_size=1),  # Pointwise
             nn.ReLU(),
             nn.BatchNorm2d(64),
 

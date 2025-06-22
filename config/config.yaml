@@ -15,10 +15,10 @@ ssim_threshold: 0.5
 model:
   input_shape: [40, 40, 1]
   embedding_dim: 64
-  margin: 0.7
+  margin: 0.5
 
 training:
-  epochs: 30
+  epochs: 10
   batch_size: 32
   learning_rate: 0.001
 
