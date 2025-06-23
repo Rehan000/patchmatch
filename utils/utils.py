@@ -7,7 +7,7 @@ from torchsummary import summary
 
 def evaluate_epoch(model, dataloader, loss_fn, device, epoch, optimizer=None, phase="Train"):
     """
-    Runs one epoch of training or validation.
+    Runs one epoch of training or validation using pre-generated triplets (for validation).
 
     Args:
         model (nn.Module): The triplet network model.
@@ -71,6 +71,35 @@ def evaluate_epoch(model, dataloader, loss_fn, device, epoch, optimizer=None, ph
           f"PN Gap: {pn_gap:.4f} | Triplet Acc: {triplet_acc:.2f}%")
 
     return avg_loss, avg_ap_dist, avg_an_dist, pn_gap, triplet_acc
+
+def mine_hard_negatives(emb_anchors, emb_positives):
+    """
+    Online Hard Negative Mining.
+
+    Selects the hardest negative for each anchor within the batch by choosing the
+    closest positive from other anchors' positives in embedding space.
+
+    Args:
+        emb_anchors (Tensor): Anchor embeddings, shape (B, D)
+        emb_positives (Tensor): Positive embeddings, shape (B, D)
+
+    Returns:
+        Tensor: Hard negatives for each anchor, shape (B, D)
+    """
+    batch_size = emb_anchors.size(0)
+
+    # Compute pairwise distances between anchors and positives
+    dists = torch.cdist(emb_anchors, emb_positives, p=2)  # Shape: (B, B)
+
+    # Mask the diagonal (positive pairs) by adding a large constant
+    mask = torch.eye(batch_size, device=emb_anchors.device)
+    dists = dists + mask * 1e5  # Ignore positive pairs by setting distance to a large value
+
+    # Find the closest (hardest) negative for each anchor
+    hard_neg_indices = torch.argmin(dists, dim=1)
+    hard_negatives = emb_positives[hard_neg_indices]
+
+    return hard_negatives
 
 def compute_recall_map1(model, npz_path, device):
     """

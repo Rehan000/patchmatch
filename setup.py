@@ -13,6 +13,7 @@ setup(
         'matplotlib==3.10.3',
         'scikit_image==0.25.2',
         'torchsummary==1.5.1',
+        'torchvision==0.22.1',
     ],
     author='Muhammad Rehan',
     description='A lightweight patch-based image matching package using Siamese descriptors.',

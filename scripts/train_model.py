@@ -5,41 +5,96 @@ import torch.nn as nn
 import torch.optim as optim
 from datetime import datetime
 from tqdm import tqdm
-import matplotlib.pyplot as plt
 import numpy as np
+from torchvision import transforms
 
 from patchmatch.datasets.data_loader import create_dataloader
 from patchmatch.models import PatchMatchTripletNetwork, TripletLoss
-from utils.utils import evaluate_epoch, compute_recall_map1, save_plot, show_model_summary
+from utils.utils import evaluate_epoch, compute_recall_map1, save_plot, show_model_summary, mine_hard_negatives
 
 def load_config(path="config/config.yaml"):
     """
     Load training configuration from a YAML file.
-
-    Args:
-        path (str): Path to the YAML config file.
-
-    Returns:
-        dict: Parsed configuration dictionary.
     """
     with open(path, "r") as f:
         return yaml.safe_load(f)
 
+def get_augmentation_pipeline():
+    """
+    Define the online data augmentation pipeline.
+    """
+    return transforms.Compose([
+        transforms.RandomRotation(degrees=10),
+        transforms.RandomAffine(degrees=0, translate=(0.05, 0.05)),
+        transforms.RandomApply([transforms.GaussianBlur(kernel_size=3)], p=0.3),
+        transforms.RandomApply([transforms.ColorJitter(brightness=0.1, contrast=0.1)], p=0.5)
+    ])
+
+def train_with_online_mining(model, dataloader, loss_fn, device, optimizer, epoch):
+    """
+    Runs one epoch of training using online hard negative mining with augmented patches.
+    """
+    model.train()
+
+    total_loss = 0.0
+    total_samples = 0
+    total_ap_dist = 0.0
+    total_an_dist = 0.0
+    triplet_correct = 0
+
+    progress_bar = tqdm(dataloader, desc=f"[Epoch {epoch}] Training", leave=False)
+
+    for step, (anchor, positive, _) in enumerate(progress_bar):
+        anchor, positive = anchor.to(device), positive.to(device)
+
+        emb_anchor = model.encoder(anchor)
+        emb_positive = model.encoder(positive)
+
+        emb_negative = mine_hard_negatives(emb_anchor, emb_positive)
+
+        loss = loss_fn(emb_anchor, emb_positive, emb_negative)
+
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
+
+        total_loss += loss.item()
+        total_samples += anchor.size(0)
+
+        ap_dist = torch.norm(emb_anchor - emb_positive, dim=1)
+        an_dist = torch.norm(emb_anchor - emb_negative, dim=1)
+        total_ap_dist += ap_dist.sum().item()
+        total_an_dist += an_dist.sum().item()
+
+        triplet_correct += torch.sum(ap_dist + loss_fn.margin < an_dist).item()
+
+        progress_bar.set_postfix(loss=loss.item(), avg_loss=total_loss / (step + 1))
+
+    avg_loss = total_loss / len(dataloader)
+    avg_ap_dist = total_ap_dist / total_samples
+    avg_an_dist = total_an_dist / total_samples
+    pn_gap = avg_an_dist - avg_ap_dist
+    triplet_acc = 100.0 * triplet_correct / total_samples
+
+    print(f"[INFO][Epoch {epoch}] Train | Loss: {avg_loss:.4f} | "
+          f"Avg Pos Dist: {avg_ap_dist:.4f} | Avg Neg Dist: {avg_an_dist:.4f} | "
+          f"PN Gap: {pn_gap:.4f} | Triplet Acc: {triplet_acc:.2f}%")
+
+    return avg_loss, avg_ap_dist, avg_an_dist, pn_gap, triplet_acc
+
 def main():
     """
-    Main training loop for PatchMatch Triplet Network.
-
-    Loads configuration, initializes dataloaders, model, optimizer, and loss function,
-    then runs training and validation for the specified number of epochs, saving the
-    best and final model weights along with performance plots.
+    Main training loop for PatchMatch Triplet Network using online hard negative mining with data augmentation.
     """
     config = load_config()
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     device_name = torch.cuda.get_device_name(0) if torch.cuda.is_available() else "CPU"
     print(f"[INFO] Using device: {device} ({device_name})")
 
-    print("[INFO] Preparing train dataloader...")
-    train_loader = create_dataloader(config["dataset"]["train"], config["training"]["batch_size"], shuffle=True)
+    print("[INFO] Preparing train dataloader with augmentation...")
+    augmentation = get_augmentation_pipeline()
+    train_loader = create_dataloader(config["dataset"]["train"], config["training"]["batch_size"], shuffle=True, transform=augmentation)
+
     print("[INFO] Preparing validation dataloader...")
     val_loader = create_dataloader(config["dataset"]["valid"], config["training"]["batch_size"], shuffle=False)
 
@@ -64,16 +119,17 @@ def main():
     }
 
     for epoch in range(config["training"]["epochs"]):
-        train_loss, _, _, train_gap, train_acc = evaluate_epoch(
-            model, train_loader, loss_fn, device, epoch, optimizer=optimizer, phase="Train")
+        train_loss, _, _, train_gap, train_acc = train_with_online_mining(
+            model, train_loader, loss_fn, device, optimizer, epoch
+        )
 
         val_loss, _, _, val_gap, val_acc = evaluate_epoch(
-            model, val_loader, loss_fn, device, epoch, phase="Validation")
+            model, val_loader, loss_fn, device, epoch, phase="Validation"
+        )
 
         recall1, map1 = compute_recall_map1(model, config["dataset"]["valid"], device)
-        print(f"[INFO][Epoch {epoch}] Validation | Recall@1: {recall1*100:.2f}% | mAP@1: {map1*100:.2f}%")
+        print(f"[INFO][Epoch {epoch}] Validation | Recall@1: {recall1 * 100:.2f}% | mAP@1: {map1 * 100:.2f}%")
 
-        # Save metrics
         history["train_loss"].append(train_loss)
         history["val_loss"].append(val_loss)
         history["train_pn_gap"].append(train_gap)
@@ -83,17 +139,14 @@ def main():
         history["recall@1"].append(recall1 * 100)
         history["mAP@1"].append(map1 * 100)
 
-        # Save best model
         if val_loss < best_val_loss:
             best_val_loss = val_loss
             torch.save(model.state_dict(), best_model_path)
             print(f"[INFO] Best model saved to {best_model_path}")
 
-    # Save final model
     torch.save(model.state_dict(), final_model_path)
     print(f"[INFO] Final model saved to {final_model_path}")
 
-    # Generate plots
     plot_dir = os.path.join(log_dir, "plots")
     os.makedirs(plot_dir, exist_ok=True)
 

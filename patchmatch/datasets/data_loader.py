@@ -1,7 +1,7 @@
 import numpy as np
 import torch
 from torch.utils.data import Dataset, DataLoader
-
+from torchvision import transforms
 
 class PatchTripletDataset(Dataset):
     """
@@ -25,7 +25,6 @@ class PatchTripletDataset(Dataset):
         self.npz_path = npz_path
         self.transform = transform
 
-        # Use memory-mapped file loading to reduce RAM usage
         self.data = np.load(self.npz_path, mmap_mode='r')
         if 'triplets' not in self.data:
             raise KeyError(f"[ERROR] 'triplets' key not found in: {npz_path}")
@@ -34,10 +33,6 @@ class PatchTripletDataset(Dataset):
         self.length = self.triplets.shape[0]
 
     def __len__(self):
-        """
-        Returns:
-            int: Total number of triplet samples in the dataset.
-        """
         return self.length
 
     def __getitem__(self, idx):
@@ -52,7 +47,6 @@ class PatchTripletDataset(Dataset):
         """
         triplet = self.triplets[idx]  # (H, W, 3)
 
-        # Split channels and normalize
         anchor = torch.tensor(triplet[..., 0], dtype=torch.float32).unsqueeze(0) / 255.0
         positive = torch.tensor(triplet[..., 1], dtype=torch.float32).unsqueeze(0) / 255.0
         negative = torch.tensor(triplet[..., 2], dtype=torch.float32).unsqueeze(0) / 255.0
@@ -64,8 +58,7 @@ class PatchTripletDataset(Dataset):
 
         return anchor, positive, negative
 
-
-def create_dataloader(npz_path, batch_size, shuffle=True, num_workers=2):
+def create_dataloader(npz_path, batch_size, shuffle=True, num_workers=2, transform=None):
     """
     Creates a PyTorch DataLoader for the given dataset.
 
@@ -74,11 +67,12 @@ def create_dataloader(npz_path, batch_size, shuffle=True, num_workers=2):
         batch_size (int): Number of samples per batch.
         shuffle (bool): Whether to shuffle the dataset at the start of each epoch.
         num_workers (int): Number of subprocesses to use for data loading.
+        transform (callable, optional): Augmentations to apply.
 
     Returns:
         DataLoader: A PyTorch DataLoader yielding batches of (anchor, positive, negative).
     """
-    dataset = PatchTripletDataset(npz_path)
+    dataset = PatchTripletDataset(npz_path, transform=transform)
     return DataLoader(
         dataset,
         batch_size=batch_size,

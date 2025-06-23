@@ -11,7 +11,7 @@ class PatchMatchEncoder(nn.Module):
     Designed to be used as the shared encoder in a Triplet network.
     """
 
-    def __init__(self, input_channels=1, embedding_dim=64):
+    def __init__(self, input_channels=1, embedding_dim=128):
         """
         Initializes the encoder module.
 
@@ -35,14 +35,14 @@ class PatchMatchEncoder(nn.Module):
 
             nn.Conv2d(96, 96, kernel_size=3, padding=1, groups=96),  # Depthwise
             nn.ReLU(),
-            nn.Conv2d(96, 64, kernel_size=1),  # Pointwise
+            nn.Conv2d(96, 128, kernel_size=1),  # Pointwise
             nn.ReLU(),
-            nn.BatchNorm2d(64),
+            nn.BatchNorm2d(128),
 
             nn.AdaptiveAvgPool2d(1),  # (B, 64, 1, 1)
         )
 
-        self.projection = nn.Linear(64, embedding_dim)
+        self.projection = nn.Linear(128, embedding_dim)
 
     def forward(self, x):
         """
