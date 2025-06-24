@@ -1,6 +1,7 @@
 import torch
 import numpy as np
 import matplotlib.pyplot as plt
+import pandas as pd
 from tqdm import tqdm
 from torch.nn.functional import normalize
 from torchsummary import summary
@@ -152,7 +153,7 @@ def compute_recall_map1(model, npz_path, device):
 
 def save_plot(metric_dict, ylabel, title, save_path):
     """
-    Saves a plot of training metrics over epochs.
+    Saves a simple training/validation plot.
 
     Args:
         metric_dict (dict): Dictionary mapping label names to lists of metric values.
@@ -170,6 +171,30 @@ def save_plot(metric_dict, ylabel, title, save_path):
     plt.legend()
     plt.tight_layout()
     plt.savefig(save_path)
+    plt.close()
+
+def save_smooth_plot(metric_dict, ylabel, title, save_path, window=5):
+    """
+    Saves a smoothed, publication-quality training/validation plot using moving averages.
+
+    Args:
+        metric_dict (dict): Dictionary mapping label names to lists of metric values.
+        ylabel (str): Label for the y-axis.
+        title (str): Plot title.
+        save_path (str): Path to save the output image.
+        window (int): Moving average window size for smoothing.
+    """
+    plt.figure(figsize=(10, 6))
+    for label, values in metric_dict.items():
+        smoothed = pd.Series(values).rolling(window=window, min_periods=1).mean()
+        plt.plot(smoothed, label=label, linewidth=2)
+    plt.xlabel("Epoch", fontsize=14)
+    plt.ylabel(ylabel, fontsize=14)
+    plt.title(title, fontsize=16)
+    plt.grid(True, linestyle='--', alpha=0.5)
+    plt.legend()
+    plt.tight_layout()
+    plt.savefig(save_path, dpi=300)  # High-resolution for publication
     plt.close()
 
 def show_model_summary(model, input_shape=(40, 40), device="cuda"):

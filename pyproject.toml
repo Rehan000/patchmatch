@@ -20,6 +20,7 @@ dependencies = [
     "scikit_image~=0.25.2",
     "torchsummary==1.5.1",
     "torchvision==0.22.1",
+    "pandas==2.3.0",
 ]
 
 [tool.setuptools.packages.find]

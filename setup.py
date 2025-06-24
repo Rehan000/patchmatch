@@ -14,6 +14,7 @@ setup(
         'scikit_image==0.25.2',
         'torchsummary==1.5.1',
         'torchvision==0.22.1',
+        'pandas==2.3.0',
     ],
     author='Muhammad Rehan',
     description='A lightweight patch-based image matching package using Siamese descriptors.',

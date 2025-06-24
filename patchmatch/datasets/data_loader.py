@@ -58,7 +58,7 @@ class PatchTripletDataset(Dataset):
 
         return anchor, positive, negative
 
-def create_dataloader(npz_path, batch_size, shuffle=True, num_workers=2, transform=None):
+def create_dataloader(npz_path, batch_size, shuffle=True, num_workers=4, transform=None):
     """
     Creates a PyTorch DataLoader for the given dataset.
 
