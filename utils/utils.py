@@ -6,6 +6,19 @@ from tqdm import tqdm
 from torch.nn.functional import normalize
 from torchsummary import summary
 
+def get_learning_rate(optimizer):
+    """
+    Retrieves the current learning rate from the optimizer.
+
+    Args:
+        optimizer (torch.optim.Optimizer): The optimizer in use.
+
+    Returns:
+        float: Current learning rate.
+    """
+    for param_group in optimizer.param_groups:
+        return param_group['lr']
+
 def evaluate_epoch(model, dataloader, loss_fn, device, epoch, optimizer=None, phase="Train"):
     """
     Runs one epoch of training or validation using pre-generated triplets (for validation).
@@ -102,19 +115,18 @@ def mine_hard_negatives(emb_anchors, emb_positives):
 
     return hard_negatives
 
-def compute_recall_map1(model, npz_path, device):
+def compute_recall_map_k(model, npz_path, device, ks=[1, 3, 5]):
     """
-    Computes Recall@1 and mAP@1 retrieval metrics using the validation dataset.
+    Computes Recall@k and mAP@k retrieval metrics for multiple k values using the validation dataset.
 
     Args:
         model (nn.Module): The trained triplet network.
         npz_path (str): Path to the validation dataset (.npz file).
         device (torch.device): Device to run computations on.
+        ks (List[int]): List of k values for which to compute Recall@k and mAP@k.
 
     Returns:
-        Tuple[float, float]:
-            - Recall@1 (fraction of queries whose top-1 nearest neighbor is the correct match)
-            - mAP@1 (mean average precision at rank 1)
+        dict: Recall@k and mAP@k for all requested ks.
     """
     data = np.load(npz_path)
     triplets = data['triplets']
@@ -136,20 +148,33 @@ def compute_recall_map1(model, npz_path, device):
     embeddings_q = normalize(torch.cat(embeddings_q), dim=1)
     embeddings_db = normalize(torch.cat(embeddings_db), dim=1)
 
-    recall_at_1 = 0
-    ap_scores = []
+    n_queries = len(embeddings_q)
+    recalls = {k: 0 for k in ks}
+    aps = {k: [] for k in ks}
 
-    for i in range(len(embeddings_q)):
+    for i in range(n_queries):
         dists = torch.norm(embeddings_db - embeddings_q[i], dim=1)
         sorted_idx = torch.argsort(dists)
 
-        if sorted_idx[0].item() == i:
-            recall_at_1 += 1
+        for k in ks:
+            if i in sorted_idx[:k].cpu().numpy():
+                recalls[k] += 1
 
-        relevant = (sorted_idx == i).nonzero(as_tuple=True)[0]
-        ap_scores.append(1.0 / (relevant[0].item() + 1) if len(relevant) > 0 else 0.0)
+            # Compute AP@k
+            relevant_positions = (sorted_idx == i).nonzero(as_tuple=True)[0]
+            if len(relevant_positions) > 0:
+                rank_position = relevant_positions[0].item()
+                if rank_position < k:
+                    aps[k].append(1.0 / (rank_position + 1))
+                else:
+                    aps[k].append(0.0)
+            else:
+                aps[k].append(0.0)
 
-    return recall_at_1 / len(embeddings_q), float(np.mean(ap_scores))
+    recall_results = {f"recall@{k}": recalls[k] / n_queries for k in ks}
+    map_results = {f"mAP@{k}": float(np.mean(aps[k])) for k in ks}
+
+    return {**recall_results, **map_results}
 
 def save_plot(metric_dict, ylabel, title, save_path):
     """

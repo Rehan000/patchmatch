@@ -45,25 +45,25 @@ class PatchMatchEncoder(nn.Module):
             SEBlock(128),  # SE block for attention
             nn.MaxPool2d(kernel_size=2),  # (B, 128, 20, 20)
 
-            # Block 3
+            # Block 3 (updated to 224 channels)
             nn.Conv2d(128, 128, kernel_size=3, padding=1, groups=128),  # Depthwise
             nn.ReLU(),
-            nn.Conv2d(128, 192, kernel_size=1, groups=2),  # Pointwise with groups
+            nn.Conv2d(128, 224, kernel_size=1, groups=2),  # Pointwise with groups (was 192)
             nn.ReLU(),
-            nn.BatchNorm2d(192),
-            SEBlock(192),  # SE block for attention
+            nn.BatchNorm2d(224),
+            SEBlock(224),  # SE block for attention
 
-            # Block 4
-            nn.Conv2d(192, 192, kernel_size=3, padding=1, groups=192),  # Depthwise
+            # Block 4 (updated to 224 channels)
+            nn.Conv2d(224, 224, kernel_size=3, padding=1, groups=224),  # Depthwise
             nn.ReLU(),
-            nn.Conv2d(192, 192, kernel_size=1, groups=2),  # Pointwise with groups
+            nn.Conv2d(224, 224, kernel_size=1, groups=2),  # Pointwise with groups
             nn.ReLU(),
-            nn.BatchNorm2d(192),
+            nn.BatchNorm2d(224),
 
-            nn.AdaptiveAvgPool2d(1),  # (B, 192, 1, 1)
+            nn.AdaptiveAvgPool2d(1),  # (B, 224, 1, 1)
         )
 
-        self.projection = nn.Linear(192, embedding_dim)
+        self.projection = nn.Linear(224, embedding_dim)
 
     def forward(self, x):
         x = self.encoder(x)
