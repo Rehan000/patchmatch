@@ -29,3 +29,10 @@ dataset:
 model_output_dir: model_outputs/
 
 resume_training: true
+
+onnx:
+  export_enabled: true
+  quantize: true
+  checkpoint_path: model_outputs/checkpoints/epoch_22.pt
+  output_onnx: model_outputs/patchmatch_model.onnx
+  output_quant_onnx: model_outputs/patchmatch_model_quant.onnx

@@ -15,6 +15,8 @@ setup(
         'torchsummary==1.5.1',
         'torchvision==0.22.1',
         'pandas==2.3.0',
+        'onnx==1.18.0',
+        'onnxruntime==1.22.0'
     ],
     author='Muhammad Rehan',
     description='A lightweight patch-based image matching package using Siamese descriptors.',
