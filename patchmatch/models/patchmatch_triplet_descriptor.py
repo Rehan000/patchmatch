@@ -32,38 +32,38 @@ class PatchMatchEncoder(nn.Module):
 
         self.encoder = nn.Sequential(
             # Block 1
-            nn.Conv2d(input_channels, 64, kernel_size=3, padding=1),  # (B, 64, 40, 40)
+            nn.Conv2d(input_channels, 32, kernel_size=3, padding=1),  # (B, 64, 30, 30)
             nn.ReLU(),
-            nn.BatchNorm2d(64),
+            nn.BatchNorm2d(32),
 
             # Block 2
+            nn.Conv2d(32, 32, kernel_size=3, padding=1, groups=32),  # Depthwise
+            nn.ReLU(),
+            nn.Conv2d(32, 64, kernel_size=1, groups=2),  # Pointwise with groups
+            nn.ReLU(),
+            nn.BatchNorm2d(64),
+            SEBlock(64),  # SE block for attention
+            nn.MaxPool2d(kernel_size=2),
+
+            # Block 3
             nn.Conv2d(64, 64, kernel_size=3, padding=1, groups=64),  # Depthwise
             nn.ReLU(),
-            nn.Conv2d(64, 128, kernel_size=1, groups=2),  # Pointwise with groups
+            nn.Conv2d(64, 112, kernel_size=1, groups=2),  # Pointwise with groups
             nn.ReLU(),
-            nn.BatchNorm2d(128),
-            SEBlock(128),  # SE block for attention
-            nn.MaxPool2d(kernel_size=2),  # (B, 128, 20, 20)
+            nn.BatchNorm2d(112),
+            SEBlock(112),  # SE block for attention
 
-            # Block 3 (updated to 224 channels)
-            nn.Conv2d(128, 128, kernel_size=3, padding=1, groups=128),  # Depthwise
+            # Block 4
+            nn.Conv2d(112, 112, kernel_size=3, padding=1, groups=112),  # Depthwise
             nn.ReLU(),
-            nn.Conv2d(128, 224, kernel_size=1, groups=2),  # Pointwise with groups (was 192)
+            nn.Conv2d(112, 112, kernel_size=1, groups=2),  # Pointwise with groups
             nn.ReLU(),
-            nn.BatchNorm2d(224),
-            SEBlock(224),  # SE block for attention
+            nn.BatchNorm2d(112),
 
-            # Block 4 (updated to 224 channels)
-            nn.Conv2d(224, 224, kernel_size=3, padding=1, groups=224),  # Depthwise
-            nn.ReLU(),
-            nn.Conv2d(224, 224, kernel_size=1, groups=2),  # Pointwise with groups
-            nn.ReLU(),
-            nn.BatchNorm2d(224),
-
-            nn.AdaptiveAvgPool2d(1),  # (B, 224, 1, 1)
+            nn.AdaptiveAvgPool2d(1),
         )
 
-        self.projection = nn.Linear(224, embedding_dim)
+        self.projection = nn.Linear(112, embedding_dim)
 
     def forward(self, x):
         x = self.encoder(x)

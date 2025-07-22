@@ -6,14 +6,14 @@ splits:
   valid: 20000
   test: 20000
 
-patch_size: 40
+patch_size: 30
 grid_spacing: 20
 
 use_ssim_filter: true
 ssim_threshold: 0.5
 
 model:
-  input_shape: [40, 40, 1]
+  input_shape: [30, 30, 1]
   embedding_dim: 128
   margin: 0.5
 
@@ -33,6 +33,6 @@ resume_training: true
 onnx:
   export_enabled: true
   quantize: true
-  checkpoint_path: model_outputs/checkpoints/epoch_22.pt
+  checkpoint_path: model_outputs/checkpoints/epoch_49.pt
   output_onnx: model_outputs/patchmatch_model.onnx
   output_quant_onnx: model_outputs/patchmatch_model_quant.onnx

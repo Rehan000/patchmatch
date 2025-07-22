@@ -209,7 +209,7 @@ def save_smooth_plot(metric_dict, ylabel, title, save_path, window=5):
         save_path (str): Path to save the output image.
         window (int): Moving average window size for smoothing.
     """
-    plt.figure(figsize=(10, 6))
+    plt.figure(figsize=(6, 6))
     for label, values in metric_dict.items():
         smoothed = pd.Series(values).rolling(window=window, min_periods=1).mean()
         plt.plot(smoothed, label=label, linewidth=2)

@@ -22,7 +22,10 @@ def export_to_onnx(model, dummy_input, export_path):
         export_params=True,
         opset_version=11,
         do_constant_folding=True,
-        dynamic_axes={"input": {0: "batch_size"}, "embedding": {0: "batch_size"}}
+        dynamic_axes={
+            "input": {0: "batch_size"},
+            "embedding": {0: "batch_size"}
+        },
     )
     print("[INFO] ONNX export completed.")
 
@@ -55,23 +58,23 @@ def main():
     onnx_config = config["onnx"]
     input_size = tuple(model_config.get("input_shape", [40, 40, 1])[:2])  # (H, W)
 
-    # Load model
+    # Load model and extract encoder
     full_model = PatchMatchTripletNetwork(embedding_dim=model_config["embedding_dim"])
     checkpoint = torch.load(onnx_config["checkpoint_path"], map_location="cpu")
     full_model.load_state_dict(checkpoint["model_state"])
-    model = full_model.encoder.eval()
+    encoder_model = full_model.encoder.eval()
     print(f"[INFO] Loaded model from {onnx_config['checkpoint_path']}")
 
-    # Create dummy input
+    # Create dummy input: 1 patch of shape (1, 1, H, W)
     dummy_input = torch.randn(1, 1, *input_size)
 
-    # Export to ONNX
-    export_to_onnx(model, dummy_input, onnx_config["output_onnx"])
+    # Export ONNX
+    export_to_onnx(encoder_model, dummy_input, onnx_config["output_onnx"])
 
     # Validate ONNX
     validate_onnx_model(onnx_config["output_onnx"])
 
-    # Apply quantization
+    # Apply quantization if enabled
     if onnx_config.get("quantize", False):
         apply_quantization(onnx_config["output_onnx"], onnx_config["output_quant_onnx"])
         validate_onnx_model(onnx_config["output_quant_onnx"])
